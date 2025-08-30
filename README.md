@@ -22,11 +22,11 @@ Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workfl
 
 ```mermaid
 flowchart LR
-    Z[Phase 0: Prepare <br> Intake from WAF Detection] -->    A --> B[Phase 1: Collect <br> Gather candidate IPs]
-    B --> C[Phase 2: Filter <br> CDN/WAF Heuristics]
-    C --> D[Phase 3: Validate <br> HTTP/HTML Matching]
+    Z[Phase 0: Prepare<br/>Intake from WAF Detection] --> B[Phase 1: Collect<br/>Gather candidate IPs]
+    B --> C[Phase 2: Filter<br/>CDN/WAF Heuristics]
+    C --> D[Phase 3: Validate<br/>HTTP/HTML Matching]
     D --> E[Phase 4: WAF Bypass Probes]
-    E --> F[Outputs <br> result.json, waf_bypass.json, logs/]
+    E --> F[Outputs<br/>result.json, waf_bypass.json, logs/]
 ```
 👉 The pipeline flows **prepare → collection → filtering → validation → probing → outputs**.
 
