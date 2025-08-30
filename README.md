@@ -13,7 +13,7 @@ Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workfl
 * **Automated filtering** of CDN/WAF ranges via prefix lists + RDNS heuristics.
 * **Direct validation** with forced `curl --resolve` requests and content similarity checks.
 * **WAF bypass probes** with controlled payloads (LFI, SQLi, XSS).
-* **Structured outputs** in JSON (`result.json`, `waf_bypass.json`) with per‑domain logs.
+* **Structured outputs** in JSON (`original_ip.json`, `waf_bypass_ip.json`) with per‑domain logs.
 * Ready for automation via **AWS EC2** runner scripts.
 
 ---
@@ -26,7 +26,7 @@ flowchart LR
     B --> C[Phase 2: Filter<br/>CDN/WAF Heuristics]
     C --> D[Phase 3: Validate<br/>HTTP/HTML Matching]
     D --> E[Phase 4: WAF Bypass Probes]
-    E --> F[Outputs<br/>result.json, waf_bypass.json, logs/]
+    E --> F[Outputs<br/>original_ip.json, waf_bypass_ip.json, logs/]
 ```
 👉 The pipeline flows **prepare → collection → filtering → validation → probing → outputs**.
 
@@ -112,7 +112,7 @@ flowchart TD
 
 **Pros:** Provides concrete evidence of origin servers, reduces guesswork.  
 **Cons:** Dynamic sites may cause false negatives; thresholds must be tuned.  
-**Output:** Confirmed origin IPs in `result.json`.
+**Output:** Confirmed origin IPs in `original_ip.json`.
 
 ```mermaid
 flowchart LR
@@ -135,7 +135,7 @@ flowchart LR
 
 **Pros:** Exposes real attack surface, directly actionable.  
 **Cons:** Payload set is lightweight (not full exploitation). WAF vendors update rules frequently.  
-**Output:** High‑risk backend IPs written into `waf_bypass.json`.
+**Output:** High‑risk backend IPs written into `waf_bypass_ip.json`.
 
 ```mermaid
 flowchart TD
@@ -213,8 +213,8 @@ python3 origin_ip_hunter.py -i domain/prepared.txt
 ## 📊 Outputs
 
 * `domain/prepared.txt` → Cleaned, scoped domain list (from Phase 0).
-* `result.json` → Confirmed origin IPs (Phase 3).
-* `waf_bypass.json` → Backend IPs that bypass WAF/CDN (Phase 4).
+* `original_ip.json` → Confirmed origin IPs (Phase 3).
+* `waf_bypass_ip.json` → Backend IPs that bypass WAF/CDN (Phase 4).
 * `log/YYYYMMDD/*.txt` → Per‑domain logs.
 
 ---
