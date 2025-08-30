@@ -1,4 +1,4 @@
-# Real IP Detection (Origin‑IP Hunter)
+# Real IP Detection (Origin-IP Hunter)
 
 A comprehensive toolkit to detect **origin IP addresses** hidden behind CDN/WAF providers (Cloudflare, Akamai, AWS CloudFront, Fastly, Azure Front Door, etc.).
 
@@ -37,22 +37,18 @@ flowchart LR
 
 ### 🔸 Phase 0 – Prepare (Domain Intake from WAF Detection)
 
-**Goal:** Build a clean, scoped list of domains previously flagged as **behind WAF** by the weekly WAF‑Detection pipeline.
+**Goal:** Produce a clean, scoped list of domains previously flagged as **behind WAF** by the weekly WAF‑Detection pipeline, to be used as input for this tool.
 
-**How it works:**
-- Parse inputs from WAF‑detection outputs (CSV/JSON/TXT), e.g. `weekly_http_waf_list.csv`, `waf_detection_result.json`, `url_list.txt`.
-- Normalize hosts: strip scheme/paths/ports, lower‑case, drop trailing dot, unbracket IPv6.
-- Exclude IP literals by default (IPv4/IPv6).
-- Remove internal or non‑routable TLDs (`.local`, `.corp`, `.lan`, `localhost`, `arpa`, `invalid`, `test`, `example`, …).
-- Optional **scope filter** (e.g., keep only `*.nab.com.au`, `*.nab.com`).
+**Inputs (examples):** WAF‑detection exports such as CSV/JSON/TXT (e.g., `weekly_http_waf_list.csv`, `waf_detection_result.json`, `url_list.txt`).
+
+**Filtering & normalization:**
+- Normalize hosts (strip scheme/path/port, lowercase, unbracket IPv6, drop trailing dot).
+- Exclude IP literals (IPv4/IPv6).
+- Remove non‑routable/internal TLDs (`.local`, `.corp`, `.lan`, `localhost`, `arpa`, `invalid`, `test`, `example`, …).
+- (Optional) **Scope filter** (e.g., keep only `*.nab.com.au`, `*.nab.com`).
 - Dedupe while preserving subdomains.
 
-**Output:** `domain/prepared.txt` → the **Phase 1** input list.
-
-> CLI (example):
-```bash
-python3 modules/prepare_phase.py   -s "data/waf_detection/*.json" "data/waf_detection/*.csv"   -o domain/prepared.txt   --scope nab.com.au nab.com   --exclude exclude.txt
-```
+**Output:** A single file (e.g., `domain/prepared.txt`) with one domain per line — this becomes the input for Phase 1 (Collect) or can be passed directly via `-i`.
 
 ---
 
@@ -159,15 +155,15 @@ real_ip_detection/
 ├─ config.py                        # API keys (local only)
 ├─ requirements.txt
 ├─ domain                           # Domain list & prepared.txt
-│  └─ prepared.txt                  # NEW: output of Phase 0
+│  └─ prepared.txt                  # Output of Phase 0 (one domain per line)
 ├─ data/
-│  └─ waf_detection/                # Weekly WAF‑detection outputs (inputs for Phase 0)
+│  └─ waf_detection/                # Weekly WAF-detection outputs (inputs for Phase 0)
 │     ├─ waf_detection_result.json
 │     └─ weekly_http_waf_list.csv
 ├─ dns_propagation_results.json     # ViewDNS plugin data
 ├─ dns_results_with_spf_dmarc.csv   # Internal DNS/IP CSV
 ├─ modules/
-│  ├─ prepare_phase.py              # NEW: Phase 0 implementation
+│  ├─ prepare_phase.py              # Phase 0 implementation
 │  ├─ http_probe.py                 # GET with Host header
 │  ├─ multi_port_probe.py           # Probe multiple ports
 │  ├─ content_compare.py            # HTML comparison
@@ -202,22 +198,12 @@ python3 -m pip install -r requirements.txt
 ## ▶️ Usage
 
 ```bash
-# Phase 0: Prepare — build domain/prepared.txt from WAF‑detection outputs
-python3 modules/prepare_phase.py   -s "data/waf_detection/*.json" "data/waf_detection/*.csv"   -o domain/prepared.txt   --scope nab.com.au nab.com   --exclude exclude.txt
-
-# Run with single domain (ad‑hoc)
+# Run with single domain (ad-hoc)
 python3 origin_ip_hunter.py -d example.com
 
-# Run with prepared list (recommended flow)
+# Run with a prepared list (e.g., produced by Phase 0)
 python3 origin_ip_hunter.py -i domain/prepared.txt
 ```
-
-**Parameters (Prepare):**
-- `-s, --sources`: one or more globs/paths to CSV/JSON/TXT produced by WAF detection.
-- `-o, --output`: output path for the cleaned domain list (default `domain/prepared.txt`).
-- `--scope`: keep only domains that end with the given suffixes (repeatable).
-- `--exclude`: path to a file with domains to drop (one per line).
-- `--keep-ips`: keep IP literals (disabled by default).
 
 **Parameters (Origin‑IP Hunter):**
 - `-d, --domain` : Target domain (can be repeated).
@@ -227,7 +213,7 @@ python3 origin_ip_hunter.py -i domain/prepared.txt
 
 ## 📊 Outputs
 
-* `domain/prepared.txt` → Cleaned, scoped domain list (Phase 0).
+* `domain/prepared.txt` → Cleaned, scoped domain list (from Phase 0).
 * `result.json` → Confirmed origin IPs (Phase 3).
 * `waf_bypass.json` → Backend IPs that bypass WAF/CDN (Phase 4).
 * `log/YYYYMMDD/*.txt` → Per‑domain logs.
