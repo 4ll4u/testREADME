@@ -2,12 +2,13 @@
 
 A comprehensive toolkit to detect **origin IP addresses** hidden behind CDN/WAF providers (Cloudflare, Akamai, AWS CloudFront, Fastly, Azure Front Door, etc.).
 
-Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workflows** (e.g., NAB operations, Kali + AWS EC2 runners). The system supports multi‑phase discovery, validation, and WAF bypass probing.
+Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workflows** (e.g., NAB operations, Kali + AWS EC2 runners). The system supports multi‑phase **prepare → discovery → validation → WAF‑bypass probing** with structured outputs and per‑domain logs.
 
 ---
 
 ## 🚀 Key Features
 
+* **Phase 0 – Prepare**: ingest weekly **WAF‑detected domains**, clean & dedupe, scope‑filter, and produce a ready‑to‑scan list.
 * **Multi‑source IP collection** (ViewDNS, crt.sh, Shodan, VirusTotal, SecurityTrails, internal DNS data).
 * **Automated filtering** of CDN/WAF ranges via prefix lists + RDNS heuristics.
 * **Direct validation** with forced `curl --resolve` requests and content similarity checks.
@@ -21,30 +22,51 @@ Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workfl
 
 ```mermaid
 flowchart LR
-    A[Input Domains <br> -d / -i] --> B[Phase 1: Collect <br> Gather candidate IPs]
+    Z[Phase 0: Prepare <br> Intake from WAF Detection] --> A[Input Domains <br> -d / -i]
+    A --> B[Phase 1: Collect <br> Gather candidate IPs]
     B --> C[Phase 2: Filter <br> CDN/WAF Heuristics]
     C --> D[Phase 3: Validate <br> HTTP/HTML Matching]
     D --> E[Phase 4: WAF Bypass Probes]
     E --> F[Outputs <br> result.json, waf_bypass.json, logs/]
 ```
-
-👉 This horizontal pipeline clearly shows how data flows step by step: **input → collection → filtering → validation → probing → outputs**.
+👉 The pipeline flows **prepare → collection → filtering → validation → probing → outputs**.
 
 ---
 
-## 🔄 Workflow: The 4 Phases
+## 🔄 Workflow: The 5 Phases
+
+### 🔸 Phase 0 – Prepare (Domain Intake from WAF Detection)
+
+**Goal:** Build a clean, scoped list of domains previously flagged as **behind WAF** by the weekly WAF‑Detection pipeline.
+
+**How it works:**
+- Parse inputs from WAF‑detection outputs (CSV/JSON/TXT), e.g. `weekly_http_waf_list.csv`, `waf_detection_result.json`, `url_list.txt`.
+- Normalize hosts: strip scheme/paths/ports, lower‑case, drop trailing dot, unbracket IPv6.
+- Exclude IP literals by default (IPv4/IPv6).
+- Remove internal or non‑routable TLDs (`.local`, `.corp`, `.lan`, `localhost`, `arpa`, `invalid`, `test`, `example`, …).
+- Optional **scope filter** (e.g., keep only `*.nab.com.au`, `*.nab.com`).
+- Dedupe while preserving subdomains.
+
+**Output:** `domain/prepared.txt` → the **Phase 1** input list.
+
+> CLI (example):
+```bash
+python3 modules/prepare_phase.py   -s "data/waf_detection/*.json" "data/waf_detection/*.csv"   -o domain/prepared.txt   --scope nab.com.au nab.com   --exclude exclude.txt
+```
+
+---
 
 ### 🔹 Phase 1 – Collect (Candidate IP Gathering)
 
 **Goal:** Build the widest possible pool of candidate IPs linked to the target domain.
 
-* **How it works:**
+**How it works:**
+- Collect from plugins: ViewDNS, crt.sh, SecurityTrails, Shodan, VirusTotal, internal CSVs.
+- Each plugin runs independently; errors don’t stop the pipeline.
 
-  * Collects from plugins: ViewDNS, crt.sh, SecurityTrails, Shodan, VirusTotal, internal CSVs.
-  * Each plugin runs independently. Errors don’t stop the pipeline.
-* **Pros:** Wide coverage, includes historical data, resilient to API failures.
-* **Cons:** Many false positives (CDN/WAF edges, outdated IPs), free‑tier quota limits.
-* **Output:** Broad, noisy pool of candidate IPs.
+**Pros:** Wide coverage, includes historical data, resilient to API failures.  
+**Cons:** Many false positives (CDN/WAF edges, outdated IPs), free‑tier quota limits.  
+**Output:** Broad, noisy pool of candidate IPs.
 
 ```mermaid
 flowchart LR
@@ -64,14 +86,14 @@ flowchart LR
 
 **Goal:** Remove CDN/WAF edge IPs and keep only likely backend servers.
 
-* **How it works:**
+**How it works:**
+- Apply prefix lists for known providers (Akamai, Cloudflare, CloudFront, Fastly, GFE, Azure).
+- Use RDNS heuristics (`edgesuite.net`, `cloudflare.net`, `incapdns.net`). 
+- Drop candidates flagged as `WAF:<vendor>`.
 
-  * Apply prefix lists for known providers (Akamai, Cloudflare, CloudFront, Fastly, GFE, Azure).
-  * Use RDNS heuristics (`edgesuite.net`, `cloudflare.net`, `incapdns.net`).
-  * Drop candidates flagged as `WAF:<vendor>`.
-* **Pros:** Greatly reduces noise, strong precision.
-* **Cons:** Can be too strict (possible false negatives if vendor IPs change). Requires weekly prefix list updates.
-* **Output:** Smaller, refined candidate IP list.
+**Pros:** Greatly reduces noise, strong precision.  
+**Cons:** Can be too strict (possible false negatives if vendor IPs change). Requires weekly prefix list updates.  
+**Output:** Smaller, refined candidate IP list.
 
 ```mermaid
 flowchart TD
@@ -86,16 +108,16 @@ flowchart TD
 
 **Goal:** Confirm which candidate IPs truly serve the protected domain.
 
-* **How it works:**
+**How it works:**
+- Perform baseline fetch from domain (`https://domain/`).
+- Perform forced fetch with `curl --resolve "domain:443:IP"`.
+- Reject if headers expose CDN/WAF fields (`cf-ray`, `akamai`, `incapsula`). 
+- Compare HTML content (title, head/tail) using similarity scoring.
+- Retry with relaxed thresholds for dynamic sites.
 
-  * Perform baseline fetch from domain (`https://domain/`).
-  * Perform forced fetch with `curl --resolve "domain:443:IP"`.
-  * Reject if headers expose CDN/WAF fields (`cf-ray`, `akamai`, `incapsula`).
-  * Compare HTML content (title, head/tail) using similarity scoring.
-  * Retry with relaxed thresholds for dynamic sites.
-* **Pros:** Provides concrete evidence of origin servers, reduces guesswork.
-* **Cons:** Dynamic sites may cause false negatives; similarity thresholds must be tuned.
-* **Output:** Confirmed origin IPs in `result.json`.
+**Pros:** Provides concrete evidence of origin servers, reduces guesswork.  
+**Cons:** Dynamic sites may cause false negatives; thresholds must be tuned.  
+**Output:** Confirmed origin IPs in `result.json`.
 
 ```mermaid
 flowchart LR
@@ -111,14 +133,14 @@ flowchart LR
 
 **Goal:** Detect if confirmed backend IPs are directly reachable and exploitable without WAF protection.
 
-* **How it works:**
+**How it works:**
+- Probe validated IPs over `http/https` with lightweight payloads (LFI, SQLi, XSS).
+- Success = HTTP `2xx/3xx` with **no WAF signatures** in headers/body.
+- Failure = 403/503 or known WAF blockpages.
 
-  * Probe validated IPs over `http/https` with lightweight payloads (LFI, SQLi, XSS).
-  * Success = HTTP `2xx/3xx` with **no WAF signatures** in headers/body.
-  * Failure = 403/503 or known WAF blockpages.
-* **Pros:** Exposes real attack surface, directly actionable.
-* **Cons:** Payload set is lightweight (not full exploitation). WAF vendors update rules frequently.
-* **Output:** High‑risk backend IPs written into `waf_bypass.json`.
+**Pros:** Exposes real attack surface, directly actionable.  
+**Cons:** Payload set is lightweight (not full exploitation). WAF vendors update rules frequently.  
+**Output:** High‑risk backend IPs written into `waf_bypass.json`.
 
 ```mermaid
 flowchart TD
@@ -136,10 +158,16 @@ real_ip_detection/
 ├─ origin_ip_hunter.py              # Orchestrator (Phase 1→4)
 ├─ config.py                        # API keys (local only)
 ├─ requirements.txt
-├─ domain                           # Domain list
+├─ domain                           # Domain list & prepared.txt
+│  └─ prepared.txt                  # NEW: output of Phase 0
+├─ data/
+│  └─ waf_detection/                # Weekly WAF‑detection outputs (inputs for Phase 0)
+│     ├─ waf_detection_result.json
+│     └─ weekly_http_waf_list.csv
 ├─ dns_propagation_results.json     # ViewDNS plugin data
 ├─ dns_results_with_spf_dmarc.csv   # Internal DNS/IP CSV
 ├─ modules/
+│  ├─ prepare_phase.py              # NEW: Phase 0 implementation
 │  ├─ http_probe.py                 # GET with Host header
 │  ├─ multi_port_probe.py           # Probe multiple ports
 │  ├─ content_compare.py            # HTML comparison
@@ -174,39 +202,51 @@ python3 -m pip install -r requirements.txt
 ## ▶️ Usage
 
 ```bash
-# Run with single domain
+# Phase 0: Prepare — build domain/prepared.txt from WAF‑detection outputs
+python3 modules/prepare_phase.py   -s "data/waf_detection/*.json" "data/waf_detection/*.csv"   -o domain/prepared.txt   --scope nab.com.au nab.com   --exclude exclude.txt
+
+# Run with single domain (ad‑hoc)
 python3 origin_ip_hunter.py -d example.com
 
-# Run with domain list
-python3 origin_ip_hunter.py -i domain
+# Run with prepared list (recommended flow)
+python3 origin_ip_hunter.py -i domain/prepared.txt
 ```
 
-**Parameters:**
+**Parameters (Prepare):**
+- `-s, --sources`: one or more globs/paths to CSV/JSON/TXT produced by WAF detection.
+- `-o, --output`: output path for the cleaned domain list (default `domain/prepared.txt`).
+- `--scope`: keep only domains that end with the given suffixes (repeatable).
+- `--exclude`: path to a file with domains to drop (one per line).
+- `--keep-ips`: keep IP literals (disabled by default).
 
-* `-d, --domain` : Target domain (can be repeated).
-* `-i, --input`  : Path to file with domains.
+**Parameters (Origin‑IP Hunter):**
+- `-d, --domain` : Target domain (can be repeated).
+- `-i, --input`  : Path to file with domains.
 
 ---
 
 ## 📊 Outputs
 
-* `result.json` → Confirmed origin IPs.
-* `waf_bypass.json` → Backend IPs that bypass WAF/CDN.
+* `domain/prepared.txt` → Cleaned, scoped domain list (Phase 0).
+* `result.json` → Confirmed origin IPs (Phase 3).
+* `waf_bypass.json` → Backend IPs that bypass WAF/CDN (Phase 4).
 * `log/YYYYMMDD/*.txt` → Per‑domain logs.
 
 ---
 
 ## ⚠️ Limitations
 
+* Depends on freshness/quality of weekly WAF‑detection outputs.
 * Free API tiers cause partial data coverage.
 * Aggressive filtering may lead to false negatives.
 * Dynamic content complicates validation.
-* WAF signatures evolve over time, bypass success varies.
+* WAF signatures evolve over time; bypass success varies.
 
 ---
 
 ## 🛠 Roadmap
 
+* Auto‑pull WAF‑detection outputs from storage (S3/Share/Artifact).
 * Add TLS certificate fingerprint validation.
 * Smarter similarity algorithms (e.g., SimHash).
 * Expanded payload lists for Phase 4.
@@ -217,6 +257,3 @@ python3 origin_ip_hunter.py -i domain
 ## 📜 License
 
 Internal use only. Do not release publicly if containing sensitive data.
-
-```
-```
