@@ -22,7 +22,7 @@ Designed for **Attack Surface Management (ASM)** and **Internet Perimeter workfl
 
 ```mermaid
 flowchart LR
-    Z[Phase 0: Prepare <br> Intake from WAF Detection] --> A[Input Domains <br> -d / -i]
+    Z[Phase 0: Prepare <br> Intake from WAF Detection] --> A
     A --> B[Phase 1: Collect <br> Gather candidate IPs]
     B --> C[Phase 2: Filter <br> CDN/WAF Heuristics]
     C --> D[Phase 3: Validate <br> HTTP/HTML Matching]
